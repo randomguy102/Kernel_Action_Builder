@@ -76,37 +76,44 @@ jobs:
           if [ "${{ github.event.inputs.enable_susfs }}" == "true" ]; then
             if [ "${{ github.event.inputs.enable_ksu }}" == "true" ]; then
               if [ "${{ github.event.inputs.susfs_mode }}" == "without_ksu" ]; then
-                SUSFS_TAG=" \\+ SUSFS \\(No KSU driver\\)"
+                SUSFS_TAG=" \+ SUSFS \(No KSU\)"
               else
-                SUSFS_TAG=" \\+ SUSFS"
+                SUSFS_TAG=" \+ SUSFS"
               fi
             else
-              SUSFS_TAG=" \\+ SUSFS \\(Standalone\\)"
+              SUSFS_TAG=" \+ SUSFS \(Standalone\)"
             fi
           fi
 
           NOTE="${{ github.event.inputs.custom_note }}"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          ACTOR="${{ github.actor }}"
 
-          # Escape special MarkdownV2 chars in variable fields
           esc() { printf '%s' "$1" | sed 's/[_*[\]()~`>#+=|{}.!-]/\\&/g'; }
+
           VARIANT_ESC=$(esc "${VARIANT}${SUSFS_TAG}")
           BRANCH_ESC=$(esc "${{ github.event.inputs.kernel_branch }}")
+          ACTOR_ESC=$(esc "${ACTOR}")
 
           MSG_FILE=$(mktemp)
-          printf "🔨 *Build Started — RM6785*\n"              >> "$MSG_FILE"
-          printf "━━━━━━━━━━━━━━━━━━━━\n"                     >> "$MSG_FILE"
-          printf "📱 *Device*   \`RM6785 \(MT6785\)\`\n"      >> "$MSG_FILE"
-          printf "🔧 *Variant*  \`%s\`\n" "${VARIANT_ESC}"    >> "$MSG_FILE"
-          printf "🌿 *Branch*   \`%s\`\n" "${BRANCH_ESC}"     >> "$MSG_FILE"
+          {
+            printf "🔨 *Build Queued*\n"
+            printf "━━━━━━━━━━━━━━━━━━━━\n"
+            printf "📱  \`RM6785\`   •   \`MT6785\`\n"
+            printf "🔧  %s\n" "${VARIANT_ESC}"
+            printf "🌿  \`%s\`\n" "${BRANCH_ESC}"
+            printf "👤  \`%s\`\n" "${ACTOR_ESC}"
+          } >> "$MSG_FILE"
 
           if [ -n "$NOTE" ]; then
             NOTE_ESC=$(esc "$NOTE")
-            printf "📝 *Note*    %s\n" "${NOTE_ESC}"          >> "$MSG_FILE"
+            printf "📝  _%s_\n" "${NOTE_ESC}" >> "$MSG_FILE"
           fi
 
-          printf "━━━━━━━━━━━━━━━━━━━━\n"                     >> "$MSG_FILE"
-          printf "[🔗 View Run](%s)\n" "${RUN_URL}"            >> "$MSG_FILE"
+          {
+            printf "━━━━━━━━━━━━━━━━━━━━\n"
+            printf "[View Run ↗](%s)" "${RUN_URL}"
+          } >> "$MSG_FILE"
 
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TELEGRAM_CHAT_ID}" \
@@ -201,8 +208,6 @@ jobs:
       # ── 7. KernelSU variants ───────────────────────────────────────────────────
 
       # --- RKSU ---
-      # susfs-rksu-master -> RKSU + SUSFS (manual-hook; no CONFIG_KSU_MANUAL_HOOK needed)
-      # main              -> RKSU without SUSFS
       - name: Setup KernelSU — RKSU
         if: github.event.inputs.enable_ksu == 'true' && github.event.inputs.ksu_variant == 'RKSU'
         working-directory: kernel
@@ -220,7 +225,6 @@ jobs:
           echo "KSU_REPO=https://github.com/rsuntk/KernelSU"          >> $GITHUB_ENV
 
       # --- xxKSU ---
-      # branch: master — no SUSFS support
       - name: Setup KernelSU — xxKSU
         if: github.event.inputs.enable_ksu == 'true' && github.event.inputs.ksu_variant == 'xxKSU'
         working-directory: kernel
@@ -235,8 +239,6 @@ jobs:
           fi
 
       # --- SukiSU ---
-      # susfs-main -> SukiSU + SUSFS built-in (no manual SUSFS integration needed)
-      # builtin    -> SukiSU without SUSFS
       - name: Setup KernelSU — SukiSU
         if: github.event.inputs.enable_ksu == 'true' && github.event.inputs.ksu_variant == 'SukiSU'
         working-directory: kernel
@@ -244,7 +246,7 @@ jobs:
           if [ "${{ github.event.inputs.enable_susfs }}" == "true" ]; then
             curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
             echo "SUSFS_ENABLED=true"               >> $GITHUB_ENV
-            echo "KSU_BRANCH=main"            >> $GITHUB_ENV
+            echo "KSU_BRANCH=main"                  >> $GITHUB_ENV
           else
             curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s builtin
             echo "SUSFS_ENABLED=false"              >> $GITHUB_ENV
@@ -254,7 +256,6 @@ jobs:
           echo "KSU_REPO=https://github.com/SukiSU-Ultra/SukiSU-Ultra"     >> $GITHUB_ENV
 
       # --- ReSukiSU ---
-      # branch: main — SukiSU-Ultra downstream focused on Non-GKI stability
       - name: Setup KernelSU — ReSukiSU
         if: github.event.inputs.enable_ksu == 'true' && github.event.inputs.ksu_variant == 'ReSukiSU'
         working-directory: kernel
@@ -291,7 +292,6 @@ jobs:
       - name: Get KSU Commit Info
         if: github.event.inputs.enable_ksu == 'true'
         run: |
-          # KSU_REPO and KSU_BRANCH are set by the variant steps above
           KSU_COMMIT=$(git ls-remote "${KSU_REPO}.git" "${KSU_BRANCH}" | cut -f1 | cut -c1-7)
           echo "KSU_COMMIT=${KSU_COMMIT}"                        >> $GITHUB_ENV
           echo "KSU_COMMIT_URL=${KSU_REPO}/commit/${KSU_COMMIT}" >> $GITHUB_ENV
@@ -337,9 +337,6 @@ jobs:
       # ── 13. Package with AnyKernel3 ───────────────────────────────────────────
       - name: Package with AnyKernel3
         run: |
-          # ── Clean ALL stale artifacts from cache ──────────────────────────────
-          # Remove both the old Image.gz and any previously built ZIPs so they
-          # never get bundled into the new package after a cache restore.
           rm -f AnyKernel/Image.gz
           rm -f AnyKernel/*.zip
 
@@ -359,7 +356,6 @@ jobs:
               ZIP_NAME="Miku-RM6785-${KSU_VARIANT}-${TIMESTAMP}"
             fi
           elif [ "${{ github.event.inputs.enable_susfs }}" == "true" ]; then
-            # Standalone SUSFS without any KSU driver
             ZIP_NAME="Miku-RM6785-SUSFS_Standalone-${TIMESTAMP}"
           else
             ZIP_NAME="Miku-RM6785-Stock-${TIMESTAMP}"
@@ -379,8 +375,6 @@ jobs:
           retention-days: 30
 
       # ── 15. Send ZIP to Telegram ──────────────────────────────────────────────
-      # sendDocument uses multipart/form-data. Caption uses MarkdownV2 via a
-      # temp file piped with -F "caption=<file". All special chars are escaped.
       - name: Send Kernel ZIP to Telegram
         if: success()
         run: |
@@ -388,8 +382,8 @@ jobs:
           duration_min=$(( BUILD_DURATION / 60 ))
           duration_sec=$(( BUILD_DURATION % 60 ))
           NOTE="${{ github.event.inputs.custom_note }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
-          # Helper: escape MarkdownV2 special characters
           esc() { printf '%s' "$1" | sed 's/[_*[\]()~`>#+=|{}.!-]/\\&/g'; }
 
           ZIP_ESC=$(esc "${ZIP_NAME}.zip")
@@ -398,60 +392,54 @@ jobs:
           COMMIT_ESC=$(esc "${KERNEL_COMMIT}")
           SIZE_ESC=$(esc "${IMAGE_SIZE_MB} MB")
           TIME_ESC=$(esc "${duration_min}m ${duration_sec}s")
-          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
           CAPTION_FILE=$(mktemp)
 
-          # ── Header ────────────────────────────────────────────────────────────
-          printf "✅ *Build Successful — RM6785*\n" >> "$CAPTION_FILE"
-          printf "━━━━━━━━━━━━━━━━━━━━\n"           >> "$CAPTION_FILE"
-          printf "\`%s\`\n\n"  "${ZIP_ESC}"         >> "$CAPTION_FILE"
+          {
+            printf "✨ *Miku RM6785 Kernel*\n"
+            printf "━━━━━━━━━━━━━━━━━━━━\n"
+            printf "\`%s\`\n\n" "${ZIP_ESC}"
 
-          # ── Kernel info ───────────────────────────────────────────────────────
-          printf "📱 *Device*      \`RM6785 \(MT6785\)\`\n" >> "$CAPTION_FILE"
-          printf "🔩 *Kernel*      \`%s\`\n" "${VER_ESC}"   >> "$CAPTION_FILE"
-          printf "🌿 *Branch*      \`%s\`\n" "${BRANCH_ESC}" >> "$CAPTION_FILE"
-          printf "🔖 *Commit*      \`%s\`\n" "${COMMIT_ESC}" >> "$CAPTION_FILE"
-          printf "📦 *Image size*  \`%s\`\n" "${SIZE_ESC}"   >> "$CAPTION_FILE"
-          printf "⏱ *Build time*  \`%s\`\n"  "${TIME_ESC}"  >> "$CAPTION_FILE"
+            printf "🔩  \`%s\`\n"  "${VER_ESC}"
+            printf "🌿  \`%s\`\n"  "${BRANCH_ESC}"
+            printf "🔖  \`%s\`\n"  "${COMMIT_ESC}"
+            printf "📦  \`%s\`\n"  "${SIZE_ESC}"
+            printf "⏱   \`%s\`\n\n" "${TIME_ESC}"
+          } >> "$CAPTION_FILE"
 
-          # ── KernelSU block ────────────────────────────────────────────────────
-          printf "\n"                                         >> "$CAPTION_FILE"
           if [ "${{ github.event.inputs.enable_ksu }}" == "true" ]; then
             KSU_VARIANT_ESC=$(esc "${KSU_VARIANT}")
             KSU_BRANCH_ESC=$(esc "${KSU_BRANCH}")
             KSU_COMMIT_ESC=$(esc "${KSU_COMMIT}")
-            MANAGER_URL_ESC=$(esc "${KSU_REPO}/releases/latest")
 
-            printf "🛡 *KernelSU*\n"                                               >> "$CAPTION_FILE"
-            printf "   • *Variant*  \`%s\`\n"  "${KSU_VARIANT_ESC}"               >> "$CAPTION_FILE"
-            printf "   • *Branch*   \`%s\`\n"  "${KSU_BRANCH_ESC}"                >> "$CAPTION_FILE"
-            printf "   • *Commit*   \`%s\`\n"  "${KSU_COMMIT_ESC}"                >> "$CAPTION_FILE"
+            {
+              printf "🛡  *%s*   \`%s\`\n" "${KSU_VARIANT_ESC}" "${KSU_COMMIT_ESC}"
+            } >> "$CAPTION_FILE"
 
             if [ "${SUSFS_ENABLED}" == "true" ]; then
               if [ "${SUSFS_DRIVER_MODE}" == "no_ksu_driver" ]; then
-                printf "   • *SUSFS*    \`Enabled \(No KSU driver\)\`\n"           >> "$CAPTION_FILE"
+                printf "🔒  SUSFS   \`no KSU driver\`\n" >> "$CAPTION_FILE"
               else
-                printf "   • *SUSFS*    \`Enabled \(With KSU driver\)\`\n"         >> "$CAPTION_FILE"
+                printf "🔒  SUSFS   \`with KSU driver\`\n" >> "$CAPTION_FILE"
               fi
             else
-              printf "   • *SUSFS*    \`Disabled\`\n"                              >> "$CAPTION_FILE"
+              printf "🔒  SUSFS   \`off\`\n" >> "$CAPTION_FILE"
             fi
 
-            printf "   • *Manager*  [Download](%s)\n" "${KSU_REPO}/releases/latest" >> "$CAPTION_FILE"
+            printf "📥  [Manager](%s)\n" "${KSU_REPO}/releases/latest" >> "$CAPTION_FILE"
           else
-            printf "🛡 *KernelSU*   \`Stock \(No root\)\`\n"                       >> "$CAPTION_FILE"
+            printf "🛡  \`Stock\`   no root\n" >> "$CAPTION_FILE"
           fi
 
-          # ── Optional note ─────────────────────────────────────────────────────
           if [ -n "$NOTE" ]; then
             NOTE_ESC=$(esc "$NOTE")
-            printf "\n📝 *Note*  %s\n" "${NOTE_ESC}" >> "$CAPTION_FILE"
+            printf "\n_%s_\n" "${NOTE_ESC}" >> "$CAPTION_FILE"
           fi
 
-          # ── Footer ────────────────────────────────────────────────────────────
-          printf "\n━━━━━━━━━━━━━━━━━━━━\n"                                        >> "$CAPTION_FILE"
-          printf "[🔗 View Run](%s)\n" "${RUN_URL}"                                 >> "$CAPTION_FILE"
+          {
+            printf "\n━━━━━━━━━━━━━━━━━━━━\n"
+            printf "[Run ↗](%s)" "${RUN_URL}"
+          } >> "$CAPTION_FILE"
 
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument" \
             -F chat_id="${TELEGRAM_CHAT_ID}" \
@@ -484,20 +472,23 @@ jobs:
           COMMIT_ESC=$(esc "${KERNEL_COMMIT:-N/A}")
 
           MSG_FILE=$(mktemp)
-          printf "❌ *Build Failed — RM6785*\n"                    >> "$MSG_FILE"
-          printf "━━━━━━━━━━━━━━━━━━━━\n"                          >> "$MSG_FILE"
-          printf "📱 *Device*   \`RM6785 \(MT6785\)\`\n"           >> "$MSG_FILE"
-          printf "🔧 *Variant*  \`%s\`\n" "${VARIANT_ESC}"         >> "$MSG_FILE"
-          printf "🌿 *Branch*   \`%s\`\n" "${BRANCH_ESC}"          >> "$MSG_FILE"
-          printf "🔖 *Commit*   \`%s\`\n" "${COMMIT_ESC}"          >> "$MSG_FILE"
+          {
+            printf "💀 *Build Failed — RM6785*\n"
+            printf "━━━━━━━━━━━━━━━━━━━━\n"
+            printf "🔧  \`%s\`\n"  "${VARIANT_ESC}"
+            printf "🌿  \`%s\`\n"  "${BRANCH_ESC}"
+            printf "🔖  \`%s\`\n"  "${COMMIT_ESC}"
+          } >> "$MSG_FILE"
 
           if [ -n "$NOTE" ]; then
             NOTE_ESC=$(esc "$NOTE")
-            printf "\n📝 *Note*  %s\n" "${NOTE_ESC}" >> "$MSG_FILE"
+            printf "📝  _%s_\n" "${NOTE_ESC}" >> "$MSG_FILE"
           fi
 
-          printf "\n━━━━━━━━━━━━━━━━━━━━\n"                         >> "$MSG_FILE"
-          printf "[🔍 View Logs](%s)\n" "${RUN_URL}"                 >> "$MSG_FILE"
+          {
+            printf "\n━━━━━━━━━━━━━━━━━━━━\n"
+            printf "[Logs ↗](%s)" "${RUN_URL}"
+          } >> "$MSG_FILE"
 
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TELEGRAM_CHAT_ID}" \
